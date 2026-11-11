@@ -39,6 +39,9 @@ public class PortalWandPlugin extends JavaPlugin implements Listener {
 
     static final Color BLUE = Color.fromRGB(0, 120, 255);
     static final Color DARK_RED = Color.fromRGB(139, 0, 0);
+    static final double RANGE = 500;                 // portal placement range in blocks
+    static final int COOLDOWN_TICKS = 30;            // 1.5s before the same entity can enter a portal again
+    static final boolean KEEP_LOOK_DIRECTION = true; // true: view direction is unchanged by portals, false: rotated with the exit portal
     static final double MIN_EXIT_SPEED = 0.25; // blocks/tick, so walking out of a portal actually leaves it
 
     NamespacedKey key;
@@ -127,7 +130,7 @@ public class PortalWandPlugin extends JavaPlugin implements Listener {
 
     void fire(Player p, int slot) {
         Location eye = p.getEyeLocation();
-        RayTraceResult r = p.getWorld().rayTraceBlocks(eye, eye.getDirection(), 128, FluidCollisionMode.NEVER, true);
+        RayTraceResult r = p.getWorld().rayTraceBlocks(eye, eye.getDirection(), RANGE, FluidCollisionMode.NEVER, true);
         Portal np = (r == null || r.getHitBlock() == null || r.getHitBlockFace() == null) ? null
                 : buildPortal(r.getHitBlock(), r.getHitBlockFace(), r.getHitPosition(), slot == 0 ? BLUE : DARK_RED);
         if (np == null) { p.playSound(p, Sound.BLOCK_NOTE_BLOCK_BASS, 1f, 0.6f); return; }
@@ -236,13 +239,13 @@ public class PortalWandPlugin extends JavaPlugin implements Listener {
         if (vn < MIN_EXIT_SPEED) nv.add(b.n.clone().multiply(MIN_EXIT_SPEED - vn));
 
         Location to = new Location(b.world, nc.getX(), nc.getY() - hy, nc.getZ());
-        if (e instanceof LivingEntity) to.setDirection(mapDir(e.getLocation().getDirection(), a, b));
+        if (e instanceof LivingEntity && !KEEP_LOOK_DIRECTION) to.setDirection(mapDir(e.getLocation().getDirection(), a, b));
         else { to.setYaw(e.getLocation().getYaw()); to.setPitch(e.getLocation().getPitch()); }
 
         e.teleport(to);
         e.setVelocity(nv);
         e.setFallDistance(0);
-        cooldown.put(id, tick + 6);
+        cooldown.put(id, tick + COOLDOWN_TICKS);
         lastPos.put(id, nc); lastSeen.put(id, tick);
         a.world.playSound(a.loc(), Sound.ENTITY_ENDERMAN_TELEPORT, 0.5f, 1.2f);
         b.world.playSound(b.loc(), Sound.ENTITY_ENDERMAN_TELEPORT, 0.5f, 1.2f);
@@ -260,7 +263,9 @@ public class PortalWandPlugin extends JavaPlugin implements Listener {
             Vector rel = pos.clone().subtract(a.center);
             double pt = rel.dot(a.t), pu = rel.dot(a.u);
             if (Math.abs(pt) > a.hw + 0.1 || Math.abs(pu) > a.hh + 0.1 || Math.abs(rel.dot(a.n)) > 0.8) continue;
+            if (cooldown.getOrDefault(pr.getUniqueId(), 0) > tick) continue;
             ev.setCancelled(true);
+            cooldown.put(pr.getUniqueId(), tick + COOLDOWN_TICKS);
             Vector nv = mapDir(pr.getVelocity(), a, b);                // same speed, rotated to leave B
             double ouLim = Math.max(0, b.hh - 0.1);
             Vector np = b.center.clone().add(b.t.clone().multiply(-pt))
